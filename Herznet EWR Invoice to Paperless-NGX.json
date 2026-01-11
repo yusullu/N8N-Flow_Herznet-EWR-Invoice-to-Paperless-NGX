@@ -1,0 +1,576 @@
+{
+  "name": "Herznet EWR Invoice to Paperless-NGX",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "months",
+              "triggerAtDayOfMonth": 10
+            }
+          ]
+        }
+      },
+      "id": "bf89701b-d6ef-41cb-9e08-3f161f8b2bbf",
+      "name": "Monatlich (5. des Monats)",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        -1760,
+        80
+      ]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "4a1c9ef3-b57c-47a0-a3bb-d0aeafeaeed2",
+              "name": "HERZNET_USERNAME",
+              "value": "12345678-1234567",
+              "type": "string"
+            },
+            {
+              "id": "6fd38b9e-37fd-408a-9eb5-84ce75065c90",
+              "name": "HERZNET_PASSWORD",
+              "value": "DEIN_PASSWORT",
+              "type": "string"
+            },
+            {
+              "id": "e7e1ec3c-3680-4576-8c2c-43718c81e987",
+              "name": "baseUrl",
+              "value": "https://mein.herznet.de",
+              "type": "string"
+            },
+            {
+              "id": "186ff029-9776-4361-adcf-92504b7ec605",
+              "name": "PAPERLESS_URL",
+              "value": "https://PAPERLESS_URL.de",
+              "type": "string"
+            },
+            {
+              "id": "7d5fb6a2-535d-4394-9c2f-bbc28cea8e78",
+              "name": "PAPERLESS_TOKEN",
+              "value": "jnlqiuwehfoiuhwqefouih1231hu123ouz1",
+              "type": "string"
+            },
+            {
+              "id": "384a34d6-3b86-4968-8eac-ebdc882b76d6",
+              "name": "PAPERLESS_CORRESPONDENT",
+              "value": "20",
+              "type": "string"
+            },
+            {
+              "id": "1c822dc6-a954-41ea-8c21-686bb5044fcc",
+              "name": "PAPERLESS_DOCTYPE",
+              "value": "6",
+              "type": "string"
+            },
+            {
+              "id": "63840e50-dde4-4ca3-9bbd-84809e749d6e",
+              "name": "PAPERLESS_TITLE_PREFIX",
+              "value": "Rechnung_Herznet_",
+              "type": "string"
+            },
+            {
+              "id": "fed2af43-356c-460f-a32a-2f752df6493f",
+              "name": "PAPERLESS_TAG_1",
+              "value": "16",
+              "type": "string"
+            },
+            {
+              "id": "869ec21c-725a-4d94-b7c6-1d641233166a",
+              "name": "PAPERLESS_TAG_2",
+              "value": "8",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "dbf6cd76-896a-43c7-a571-0d90f82f9deb",
+      "name": "⚙️ KONFIGURATION",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        -1536,
+        80
+      ],
+      "notesInFlow": true,
+      "notes": "HIER ANPASSEN:\n- username/password als Umgebungsvariablen oder direkt eintragen\n- downloadFolder: Zielordner für PDFs"
+    },
+    {
+      "parameters": {
+        "url": "={{ $json.baseUrl }}/",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Accept",
+              "value": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"
+            },
+            {
+              "name": "User-Agent",
+              "value": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+            }
+          ]
+        },
+        "options": {
+          "redirect": {
+            "redirect": {}
+          },
+          "response": {
+            "response": {
+              "fullResponse": true,
+              "responseFormat": "text"
+            }
+          }
+        }
+      },
+      "id": "b5d3d578-323a-41a6-9c59-a4ac672dc7aa",
+      "name": "1. Login-Seite laden",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -1312,
+        80
+      ],
+      "notesInFlow": true,
+      "notes": "Holt Cookies und CSRF-Token"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Login-Seite Response\n  const response = $input.first().json;\n  const config = $('⚙️ KONFIGURATION').first().json;\n\n  // Cookies extrahieren\n  let cookies = '';\n  const headers = response.headers || {};\n  const setCookieHeader = headers['set-cookie'] || headers['Set-Cookie'];\n\n  if (setCookieHeader) {\n    if (Array.isArray(setCookieHeader)) {\n      cookies = setCookieHeader.map(c => c.split(';')[0]).join('; ');\n    } else {\n      cookies = setCookieHeader.split(';')[0];\n    }\n  }\n\n  // Body kann in verschiedenen Feldern sein\n  let body = response.data || response.body || '';\n  if (typeof body === 'object') {\n    body = JSON.stringify(body);\n  }\n\n  // CSRF-Token suchen - verschiedene Patterns probieren\n  let csrfToken = '';\n\n  // Pattern 1: ix.session.CSRFToken = \"...\"\n  let csrfMatch = body.match(/ix\\.session\\.CSRFToken\\s*=\\s*[\"']([A-F0-9]+)[\"']/i);\n  if (csrfMatch) {\n    csrfToken = csrfMatch[1];\n  }\n\n  // Pattern 2: CSRFToken in hidden input\n  if (!csrfToken) {\n    csrfMatch = body.match(/name=[\"']CSRFToken[\"']\\s*value=[\"']([^\"']+)[\"']/i);\n    if (csrfMatch) {\n      csrfToken = csrfMatch[1];\n    }\n  }\n\n  // Pattern 3: CSRFToken in data-Attribut\n  if (!csrfToken) {\n    csrfMatch = body.match(/data-csrf(?:-token)?=[\"']([^\"']+)[\"']/i);\n    if (csrfMatch) {\n      csrfToken = csrfMatch[1];\n    }\n  }\n\n  // Pattern 4: rq_csrftoken Parameter\n  if (!csrfToken) {\n    csrfMatch = body.match(/rq_csrftoken=([A-F0-9]+)/i);\n    if (csrfMatch) {\n      csrfToken = csrfMatch[1];\n    }\n  }\n\n  // Wenn kein CSRF-Token gefunden, trotzdem weitermachen (manche Systeme brauchen keins für den ersten Request)\n  if (!csrfToken) {\n    console.log('Kein CSRF-Token gefunden, versuche ohne...');\n    csrfToken = '';\n  }\n\n  return [{\n    json: {\n      cookies: cookies,\n      csrfToken: csrfToken,\n      baseUrl: config.baseUrl,\n      username: config.HERZNET_USERNAME,\n      password: config.HERZNET_PASSWORD,\n      bodyLength: body.length,\n      bodyPreview: body.substring(0, 500)\n    }\n  }];"
+      },
+      "id": "57c69ba6-6d82-4c45-8547-ea0628575675",
+      "name": "2. CSRF & Cookies extrahieren",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -1088,
+        80
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $json.baseUrl }}/internal/system/vm/html/login/intrexxauth/getlogin.vm",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Cookie",
+              "value": "={{ $json.cookies }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/x-www-form-urlencoded"
+            },
+            {
+              "name": "X-Requested-With",
+              "value": "XMLHttpRequest"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "form-urlencoded",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "rq_xhr",
+              "value": "31"
+            },
+            {
+              "name": "fr_Credentials",
+              "value": "=urn:schemas-unitedplanet-de:login-token:domain-name|0|0||urn:schemas-unitedplanet-de:login-token:user-name|0|0{{ $json.username }}||urn:schemas-unitedplanet-de:login-token:password|0|0{{ $json.password }}"
+            },
+            {
+              "name": "CSRFToken",
+              "value": "={{ $json.csrfToken }}"
+            }
+          ]
+        },
+        "options": {
+          "redirect": {
+            "redirect": {}
+          },
+          "response": {
+            "response": {
+              "fullResponse": true,
+              "responseFormat": "text"
+            }
+          }
+        }
+      },
+      "id": "ffc70488-f35a-439f-97dc-43517cc72b44",
+      "name": "3. Login durchführen",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -880,
+        80
+      ],
+      "notesInFlow": true,
+      "notes": "Intrexx Login mit URN-Credentials"
+    },
+    {
+      "parameters": {
+        "jsCode": "const response = $input.first().json;\n  const prevData = $('2. CSRF & Cookies extrahieren').first().json;\n\n  // Neue Cookies nach Login\n  let cookies = prevData.cookies;\n  const headers = response.headers || {};\n  const setCookieHeader = headers['set-cookie'] || headers['Set-Cookie'];\n\n  if (setCookieHeader) {\n    const newCookies = Array.isArray(setCookieHeader)\n      ? setCookieHeader.map(c => c.split(';')[0]).join('; ')\n      : setCookieHeader.split(';')[0];\n\n    const cookieMap = {};\n    if (cookies) {\n      cookies.split('; ').forEach(c => {\n        const [key, val] = c.split('=');\n        if (key) cookieMap[key] = val;\n      });\n    }\n    if (newCookies) {\n      newCookies.split('; ').forEach(c => {\n        const [key, val] = c.split('=');\n        if (key) cookieMap[key] = val;\n      });\n    }\n    cookies = Object.entries(cookieMap).map(([k, v]) => `${k}=${v}`).join('; ');\n  }\n\n  // CSRFToken aus Login-Response extrahieren\n  let loginData = response.data || '';\n  if (typeof loginData === 'string') {\n    try {\n      loginData = JSON.parse(loginData);\n    } catch(e) {}\n  }\n  const newCsrfToken = loginData.CSRFToken || '';\n\n  return [{\n    json: {\n      cookies: cookies,\n      csrfToken: newCsrfToken,\n      baseUrl: prevData.baseUrl,\n      loginSuccess: true\n    }\n  }];"
+      },
+      "id": "f8d19b78-2e59-4034-9660-7914d8770cd8",
+      "name": "4. Login-Cookies verarbeiten",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -656,
+        80
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $json.baseUrl }}/path/app/",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Cookie",
+              "value": "={{ $json.cookies }}"
+            },
+            {
+              "name": "X-Requested-With",
+              "value": "XMLHttpRequest"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/x-www-form-urlencoded"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "form-urlencoded",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "rq_AppGuid",
+              "value": "F81CA5E5656A73C6A81538EDBAD617BDE2DAE720"
+            },
+            {
+              "name": "rq_TargetPageGuid",
+              "value": "CF91761AE97E653BF34E6486B2C8B03D9396E173"
+            },
+            {
+              "name": "qs_action",
+              "value": "5452AC109015BE992C08B45583DAAFCA2F01414A"
+            },
+            {
+              "name": "qs_link",
+              "value": "AFFE03B22DEAA59CFC7CD9E6F7467E0D0601E55F"
+            },
+            {
+              "name": "qs_actionMode",
+              "value": "actNone"
+            },
+            {
+              "name": "qs_template",
+              "value": "stage"
+            },
+            {
+              "name": "rq_xhr",
+              "value": "31"
+            },
+            {
+              "name": "CSRFToken",
+              "value": "={{ $json.csrfToken }}"
+            }
+          ]
+        },
+        "options": {
+          "response": {
+            "response": {
+              "fullResponse": true,
+              "responseFormat": "text"
+            }
+          }
+        }
+      },
+      "id": "922314cb-d099-4ccb-8aaf-a6b01505421e",
+      "name": "5. Dokumenten-Seite laden",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -432,
+        80
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const response = $input.first().json;\n  const prevData = $('4. Login-Cookies verarbeiten').first().json;\n  const config = $('⚙️ KONFIGURATION').first().json;\n\n  // Body aus data oder body\n  let body = response.data || response.body || '';\n  if (typeof body === 'object') {\n    body = JSON.stringify(body);\n  }\n\n  // PDF-Links extrahieren - suche nach downloadIxServlet mit fileId\n  const pdfLinks = [];\n  const hrefPattern = /href=\"([^\"]*qs_servlet=downloadIxServlet[^\"]*qs_fileId=[^\"]+)\"/gi;\n  let match;\n\n  while ((match = hrefPattern.exec(body)) !== null) {\n    let url = match[1].replace(/&amp;/g, '&');\n\n    // Parameter manuell extrahieren\n    const fileIdMatch = url.match(/qs_fileId=([^&]+)/);\n    const recIdMatch = url.match(/rq_RecId=([^&]+)/);\n    const lastModifiedMatch = url.match(/qs_lastModified=([^&]+)/);\n    const fileDataRangeMatch = url.match(/qs_fileDataRange=([^&]+)/);\n\n    const fileId = fileIdMatch ? fileIdMatch[1] : null;\n    const recId = recIdMatch ? recIdMatch[1] : null;\n    const lastModified = lastModifiedMatch ? lastModifiedMatch[1] : null;\n    const fileDataRange = fileDataRangeMatch ? fileDataRangeMatch[1] : null;\n\n    if (fileId) {\n      let fullUrl = url;\n      if (url.startsWith('/')) {\n        fullUrl = prevData.baseUrl + url;\n      } else if (!url.startsWith('http')) {\n        fullUrl = prevData.baseUrl + '/' + url;\n      }\n\n      pdfLinks.push({\n        url: fullUrl,\n        fileId: fileId,\n        recId: recId,\n        lastModified: lastModified,\n        fileDataRange: fileDataRange\n      });\n    }\n  }\n\n  // Duplikate entfernen (nach fileId)\n  const seen = {};\n  const uniqueLinks = pdfLinks.filter(link => {\n    if (seen[link.fileId]) return false;\n    seen[link.fileId] = true;\n    return true;\n  });\n\n  if (uniqueLinks.length === 0) {\n    return [{\n      json: {\n        error: 'Keine PDF-Links gefunden',\n        bodyLength: body.length,\n        cookies: prevData.cookies\n      }\n    }];\n  }\n\n  // Config-Variablen an jeden Link anhängen\n  return uniqueLinks.map(link => ({\n      json: {\n        ...link,\n        cookies: prevData.cookies,\n        baseUrl: prevData.baseUrl\n      }\n    }));"
+      },
+      "id": "4e5007f1-5664-4403-abee-42708747ed61",
+      "name": "6. PDF-Links extrahieren",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -208,
+        80
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('⚙️ KONFIGURATION').first().json.PAPERLESS_URL }}/api/documents/post_document/",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Token {{ $('⚙️ KONFIGURATION').first().json.PAPERLESS_TOKEN }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "multipart-form-data",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "parameterType": "formBinaryData",
+              "name": "document",
+              "inputDataFieldName": "=data"
+            },
+            {
+              "name": "title",
+              "value": "={{ $('⚙️ KONFIGURATION').first().json.PAPERLESS_TITLE_PREFIX }}{{ $('6. PDF-Links extrahieren').item.json.fileId }}"
+            },
+            {
+              "name": "correspondent",
+              "value": "={{ $('⚙️ KONFIGURATION').first().json.PAPERLESS_CORRESPONDENT }}"
+            },
+            {
+              "name": "document_type",
+              "value": "={{ $('⚙️ KONFIGURATION').first().json.PAPERLESS_DOCTYPE }}"
+            },
+            {
+              "name": "tags",
+              "value": "={{ $('⚙️ KONFIGURATION').first().json.PAPERLESS_TAG_1 }}"
+            },
+            {
+              "name": "tags",
+              "value": "={{ $('⚙️ KONFIGURATION').first().json.PAPERLESS_TAG_2 }}"
+            }
+          ]
+        },
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "text"
+            }
+          }
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        208,
+        80
+      ],
+      "id": "874fddf9-4cc9-46e6-964f-7f1a01840f46",
+      "name": "8. Upload zu Paperless"
+    },
+    {
+      "parameters": {
+        "aggregate": "aggregateAllItemData",
+        "destinationFieldName": "downloadedFiles",
+        "options": {}
+      },
+      "id": "23d1c983-67f6-4283-bd95-05c84f9444dc",
+      "name": "9. Ergebnisse sammeln",
+      "type": "n8n-nodes-base.aggregate",
+      "typeVersion": 1,
+      "position": [
+        448,
+        80
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const pdfLinks = $('6. PDF-Links extrahieren').all();\n\n  const summary = {\n    zeitpunkt: new Date().toISOString(),\n    anzahlDownloads: pdfLinks.length,\n    dateien: pdfLinks.map(item => ({\n      fileId: item.json.fileId,\n      dateiname: `Rechnung_Herznet_${item.json.fileId}.pdf`\n    }))\n  };\n\n  return [{ json: summary }];"
+      },
+      "id": "0b129c51-5f82-4c72-9298-25dae89a417a",
+      "name": "10. Zusammenfassung",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        672,
+        80
+      ]
+    },
+    {
+      "parameters": {
+        "url": "={{ $json.url }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Cookie",
+              "value": "={{ $json.cookies }}"
+            }
+          ]
+        },
+        "options": {
+          "response": {
+            "response": {
+              "fullResponse": true,
+              "responseFormat": "file"
+            }
+          }
+        }
+      },
+      "id": "1fa6c28d-3541-4525-8922-d6c82189f2d0",
+      "name": "7. PDF herunterladen",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        0,
+        80
+      ]
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Monatlich (5. des Monats)": {
+      "main": [
+        [
+          {
+            "node": "⚙️ KONFIGURATION",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "⚙️ KONFIGURATION": {
+      "main": [
+        [
+          {
+            "node": "1. Login-Seite laden",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "1. Login-Seite laden": {
+      "main": [
+        [
+          {
+            "node": "2. CSRF & Cookies extrahieren",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "2. CSRF & Cookies extrahieren": {
+      "main": [
+        [
+          {
+            "node": "3. Login durchführen",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "3. Login durchführen": {
+      "main": [
+        [
+          {
+            "node": "4. Login-Cookies verarbeiten",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "4. Login-Cookies verarbeiten": {
+      "main": [
+        [
+          {
+            "node": "5. Dokumenten-Seite laden",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "5. Dokumenten-Seite laden": {
+      "main": [
+        [
+          {
+            "node": "6. PDF-Links extrahieren",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "6. PDF-Links extrahieren": {
+      "main": [
+        [
+          {
+            "node": "7. PDF herunterladen",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "8. Upload zu Paperless": {
+      "main": [
+        [
+          {
+            "node": "9. Ergebnisse sammeln",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "9. Ergebnisse sammeln": {
+      "main": [
+        [
+          {
+            "node": "10. Zusammenfassung",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "7. PDF herunterladen": {
+      "main": [
+        [
+          {
+            "node": "8. Upload zu Paperless",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "callerPolicy": "workflowsFromSameOwner",
+    "availableInMCP": false
+  },
+  "versionId": "e7dc9dc6-0818-4cee-b819-44f843cb7802",
+  "meta": {
+    "instanceId": "47ffd392ad02a42a3aee597e621a1722ab0d5196307e5cd6b99778aef2ca2b10"
+  },
+  "id": "tcLL2iBIIyw1dgVf",
+  "tags": []
+}
